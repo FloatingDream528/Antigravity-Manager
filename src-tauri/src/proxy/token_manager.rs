@@ -1259,20 +1259,17 @@ impl TokenManager {
             // Priority 2: Health score (higher is better)
             let health_cmp = b
                 .health_score
-                .partial_cmp(&a.health_score)
-                .unwrap_or(std::cmp::Ordering::Equal);
+                .total_cmp(&a.health_score);
             if health_cmp != std::cmp::Ordering::Equal {
                 return health_cmp;
             }
 
-            // Priority 3: Reset time (earlier is better, but only if diff > 10 min)
-            let reset_a = a.reset_time.unwrap_or(i64::MAX);
-            let reset_b = b.reset_time.unwrap_or(i64::MAX);
-            if (reset_a - reset_b).abs() >= RESET_TIME_THRESHOLD_SECS {
-                reset_a.cmp(&reset_b)
-            } else {
-                std::cmp::Ordering::Equal
-            }
+            // Priority 3: Reset time (earlier is better)
+            // 按 RESET_TIME_THRESHOLD_SECS 分桶，保证传递性
+            let bucket = |t: &Option<i64>| {
+                t.unwrap_or(i64::MAX) / RESET_TIME_THRESHOLD_SECS
+            };
+            bucket(&a.reset_time).cmp(&bucket(&b.reset_time))
         });
 
         // 【调试日志】打印排序后的账号顺序（显示目标模型的 quota）
@@ -3249,22 +3246,19 @@ mod tests {
         // Second: compare by health score (higher is better)
         let health_cmp = b
             .health_score
-            .partial_cmp(&a.health_score)
-            .unwrap_or(Ordering::Equal);
+            .total_cmp(&a.health_score);
         if health_cmp != Ordering::Equal {
             return health_cmp;
         }
 
         // Third: compare by reset time (earlier/closer is better)
-        let reset_a = a.reset_time.unwrap_or(i64::MAX);
-        let reset_b = b.reset_time.unwrap_or(i64::MAX);
-        let reset_diff = (reset_a - reset_b).abs();
-
-        if reset_diff >= RESET_TIME_THRESHOLD_SECS {
-            let reset_cmp = reset_a.cmp(&reset_b);
-            if reset_cmp != Ordering::Equal {
-                return reset_cmp;
-            }
+        // 按 RESET_TIME_THRESHOLD_SECS 分桶，保证传递性
+        let bucket = |t: &Option<i64>| {
+            t.unwrap_or(i64::MAX) / RESET_TIME_THRESHOLD_SECS
+        };
+        let reset_cmp = bucket(&a.reset_time).cmp(&bucket(&b.reset_time));
+        if reset_cmp != Ordering::Equal {
+            return reset_cmp;
         }
 
         // Fourth: compare by remaining quota percentage (higher is better)
